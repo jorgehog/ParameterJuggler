@@ -48,7 +48,7 @@ class Worker(threading.Thread):
             success = self.exec_program_rule(self.proc, combination, *self.args, **self.kwargs)
 
             if success != 0 and not self.stopped():
-                self.controller.stop_threads(success)
+                self.controller.stop_threads(self.proc, success)
 
 
 class ParameterSet:
@@ -273,8 +273,8 @@ class ParameterSetController:
 
         self.clean()
 
-    def stop_threads(self, status):
-        print "A process ended with exit status %d: Stopping..." % status
+    def stop_threads(self, which, status):
+        print "Process %d ended with exit status %d: Stopping..." % (which, status)
 
         self.threads_stopped = True
 
