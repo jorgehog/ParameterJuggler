@@ -267,6 +267,8 @@ class ParameterSetController:
             self.all_threads.append(thread)
 
             thread.start()
+
+        for thread in self.all_threads:
             thread.join()
 
         self.clean()
