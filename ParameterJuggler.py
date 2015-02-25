@@ -20,7 +20,16 @@ class Worker(threading.Thread):
         for parameter_set in self.controller.parameter_sets:
             parameter_set.copy_config(controller, proc)
 
+        self._stop = threading.Event()
+
         super(Worker, self).__init__()
+
+    def stop(self):
+        print "proc ", self.proc, " stopping.."
+        self._stop.set()
+
+    def stopped(self):
+        return self._stop.isSet() or self.controller.threads_stopped
 
     def write_combination(self, combination):
 
@@ -30,9 +39,18 @@ class Worker(threading.Thread):
 
     def run(self):
         for combination in self.set:
+
+            if self.stopped():
+                break
+
             self.write_combination(combination)
 
-            self.exec_program_rule(self.proc, combination, *self.args, **self.kwargs)
+            success = self.exec_program_rule(self.proc, combination, *self.args, **self.kwargs)
+
+            print success
+            if success != 0 and not self.stopped():
+                self.controller.stop_threads()
+
 
 class ParameterSet:
 
@@ -146,6 +164,9 @@ class ParameterSetController:
         self.parameter_sets = []
         self.copied_config_files = []
 
+        self.all_threads = []
+        self.threads_stopped = False
+
     def register_parameter_set(self, parameter_set):
 
         if len(self.parameter_sets) != 0:
@@ -228,7 +249,8 @@ class ParameterSetController:
 
         remainder = len(combinations) - n_per_proc*n_procs
 
-        all_threads = []
+        self.all_threads = []
+        self.threads_stopped = False
 
         prev = 0
         for proc in range(n_procs):
@@ -243,12 +265,20 @@ class ParameterSetController:
             prev += N
 
             thread = Worker(self, execute_program_rule, chunk, proc, *args, **kwargs)
-            all_threads.append(thread)
+            self.all_threads.append(thread)
 
             thread.start()
             thread.join()
 
         self.clean()
+
+    def stop_threads(self):
+        print "Exit failure: Stopping"
+
+        self.threads_stopped = True
+
+        for thread in self.all_threads:
+            thread.stop()
 
 def quick_replace(cfg, name, value):
 
@@ -265,7 +295,7 @@ def quick_replace(cfg, name, value):
 
 def exec_test_function(proc, combination):
 
-    time.sleep(proc/10.)
+    time.sleep(proc/100.)
 
     testfile_name = "/tmp/test_paramloop_%d.cfg" % proc
 
@@ -277,9 +307,10 @@ def exec_test_function(proc, combination):
     for i, result in enumerate(results):
         if float(result) == combination[i]:
             print "combination", combination, "success."
+            return 0
         else:
             print "combination", combination, "failed on proc %d: %s != %s" % (proc, str(results), str(combination))
-
+            return 1
 
 def testbed():
 
@@ -306,7 +337,7 @@ def testbed():
     controller.register_parameter_set(set2)
     controller.register_parameter_set(set3)
 
-    controller.run(exec_test_function, ask=False, n_procs=4)
+    controller.run(exec_test_function, ask=False, n_procs=20)
 
 if __name__ == "__main__":
     testbed()
