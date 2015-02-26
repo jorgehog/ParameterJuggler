@@ -4,51 +4,35 @@ import threading
 import time
 import shutil
 import os
+import sys
+
+try:
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    mpi_success = True
+except ImportError:
+    mpi_success = False
+    pass
 
 class Worker(threading.Thread):
 
-    def __init__(self, controller, exec_program_rule, set, proc, *args, **kwargs):
+    def __init__(self, controller, exec_program_rule, chunk, proc, *args, **kwargs):
 
         self.controller = controller
         self.exec_program_rule = exec_program_rule
-        self.set = set
+        self.chunk = chunk
         self.proc = proc
 
         self.args = args
         self.kwargs = kwargs
 
-        for parameter_set in self.controller.parameter_sets:
-            parameter_set.copy_config(controller, proc)
-
-        self._stop = threading.Event()
-
         super(Worker, self).__init__()
 
     def stop(self):
-        print "proc ", self.proc, " stopping.."
-        self._stop.set()
-
-    def stopped(self):
-        return self._stop.isSet() or self.controller.threads_stopped
-
-    def write_combination(self, combination):
-
-        for parameter_set, value in zip(self.controller.parameter_sets,
-                                        combination):
-            parameter_set.write_value(value, self.proc)
+        self.controller.stopped = True
 
     def run(self):
-        for combination in self.set:
-
-            if self.stopped():
-                break
-
-            self.write_combination(combination)
-
-            success = self.exec_program_rule(self.proc, combination, *self.args, **self.kwargs)
-
-            if success != 0 and not self.stopped():
-                self.controller.stop_threads(self.proc, success)
+        self.controller.run_chunk(self.exec_program_rule, self.chunk, self.proc, *self.args, **self.kwargs)
 
 
 class ParameterSet:
@@ -133,9 +117,7 @@ class ParameterSet:
     def copy_config(self, controller, proc):
         config_out = self.get_config_name(proc)
 
-        if not os.path.exists(config_out):
-
-            shutil.copy(self.config_filename, config_out)
+        shutil.copy(self.config_filename, config_out)
 
         controller.register_config_file(config_out)
 
@@ -153,18 +135,25 @@ class ParameterSet:
                                   *self.regex_flags)
 
         with open(config_out, 'w') as config_file:
-
             config_file.write(new_config_raw_text)
+
+
+
 
 
 class ParameterSetController:
 
-    def __init__(self):
+    def __init__(self, use_mpi=False):
         self.parameter_sets = []
         self.copied_config_files = []
 
         self.all_threads = []
-        self.threads_stopped = False
+        self.stopped = False
+
+        self.use_mpi = use_mpi
+
+        if use_mpi and not mpi_success:
+            raise ImportError("Missing dependecy for mpi: mpi4py")
 
     def register_parameter_set(self, parameter_set):
 
@@ -189,6 +178,17 @@ class ParameterSetController:
         for config_name in self.copied_config_files:
             os.remove(config_name)
 
+    def get_rank(self):
+        if self.use_mpi:
+            return comm.rank
+        else:
+            return 0
+
+    def n_nodes(self):
+        if self.use_mpi:
+            return comm.size
+        else:
+            return 1
 
     def run(self, execute_program_rule, *args, **kwargs):
 
@@ -196,20 +196,36 @@ class ParameterSetController:
         for parameter_set in self.parameter_sets:
             n *= len(parameter_set.set)
 
-        skip = False
+        skip = self.use_mpi
         if "ask" in kwargs:
-            if kwargs["ask"] is False:
-                skip = True
+
+            if self.use_mpi and self.get_rank() == 0:
+                print "Time estimates is not available when using mpi"
+            else:
+                if kwargs["ask"] is False:
+                    skip = True
             kwargs.pop("ask")
 
-        n_procs = 1
+        n_procs = self.n_nodes()
+
         if "n_procs" in kwargs:
 
-            n_procs = kwargs.pop("n_procs")
+            if self.use_mpi:
+                if self.get_rank() == 0:
+                    print "Number of processes is controller by mpirun and not n_procs kwarg when using mpi."
+            else:
+                n_procs = kwargs["n_procs"]
 
-            if n_procs <= 1:
-                n_procs = 1
+                if n_procs <= 1:
+                    n_procs = 1
 
+            kwargs.pop("n_procs")
+
+        if n_procs > n:
+            if self.get_rank() == 0:
+                raise ValueError("Number of processes %d is too high for %d processes." % (n_procs, n))
+            else:
+                return
 
         if skip:
             ans = ""
@@ -249,7 +265,9 @@ class ParameterSetController:
         remainder = len(combinations) - n_per_proc*n_procs
 
         self.all_threads = []
-        self.threads_stopped = False
+        self.stopped = False
+
+        chunks = [None for n in range(n_procs)]
 
         prev = 0
         for proc in range(n_procs):
@@ -259,27 +277,68 @@ class ParameterSetController:
             if proc < remainder:
                 N += 1
 
-            chunk = combinations[prev:prev+N]
+            chunks[proc] = combinations[prev:prev+N]
 
             prev += N
 
-            thread = Worker(self, execute_program_rule, chunk, proc, *args, **kwargs)
-            self.all_threads.append(thread)
-
-            thread.start()
-
-        for thread in self.all_threads:
-            thread.join()
+        self.start_runs(execute_program_rule, chunks, *args, **kwargs)
 
         self.clean()
 
-    def stop_threads(self, which, status):
+    def dump_config_files(self, proc):
+        for parameter_set in self.parameter_sets:
+            parameter_set.copy_config(self, proc)
+
+    def start_runs(self, execute_program_rule, chunks, *args, **kwargs):
+
+        if self.use_mpi:
+
+            self.dump_config_files(comm.rank)
+
+            chunk = chunks[comm.rank]
+
+            self.run_chunk(execute_program_rule, chunk, comm.rank, *args, **kwargs)
+
+        else:
+
+            for proc, chunk in enumerate(chunks):
+
+                self.dump_config_files(proc)
+
+                thread = Worker(self, execute_program_rule, chunk, proc, *args, **kwargs)
+
+                self.all_threads.append(thread)
+
+                thread.start()
+
+            for thread in self.all_threads:
+                thread.join()
+
+    def run_chunk(self, execute_program_rule, chunk, proc, *args, **kwargs):
+
+        for combination in chunk:
+
+            if self.stopped:
+                break
+
+            self.write_combination(proc, combination)
+
+            success = execute_program_rule(proc, combination, *args, **kwargs)
+
+            if success != 0 and not self.stopped:
+                self.stop(proc, success)
+
+    def write_combination(self, proc, combination):
+
+        for parameter_set, value in zip(self.parameter_sets, combination):
+            parameter_set.write_value(value, proc)
+
+    def stop(self, which, status):
         print "Process %d ended with exit status %d: Stopping..." % (which, status)
 
-        self.threads_stopped = True
-
-        for thread in self.all_threads:
-            thread.stop()
+        if not self.use_mpi:
+            for thread in self.all_threads:
+                thread.stop()
 
 def quick_replace(cfg, name, value):
 
@@ -296,7 +355,7 @@ def quick_replace(cfg, name, value):
 
 def exec_test_function(proc, combination):
 
-    time.sleep(proc/100.)
+    time.sleep(proc/10.)
 
     testfile_name = "/tmp/test_paramloop_%d.cfg" % proc
 
@@ -304,6 +363,7 @@ def exec_test_function(proc, combination):
         testfile_raw_text = testfile.read()
 
     results = findall(r"a\s*\=\s*\[\s*(\d+)\s*\,\s*(.*)\s*\,\s*(\d+)\s*\]", testfile_raw_text)[0]
+
 
     for i, result in enumerate(results):
         if float(result) == combination[i]:
@@ -332,7 +392,7 @@ def testbed():
     set3.initialize_set_incr( 0, 100,  30, )
 
 
-    controller = ParameterSetController()
+    controller = ParameterSetController(use_mpi=False)
 
     controller.register_parameter_set(set1)
     controller.register_parameter_set(set2)
