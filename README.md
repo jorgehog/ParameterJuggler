@@ -1,5 +1,13 @@
 A simple, limited and user friendly way to run your program for a bunch of different combinations of parameters stored in various config files.
 
+Supports both single node threading and MPI cluster parallelization by passing use_mpi=[False]/True to the controller constructor.
+
+For MPI mode, run your script as
+
+```
+mpirun -n [nprocs] python my_script.py
+```
+
 A parameter is described as the config file in which it is stored, and the regex pattern from which it can be found.
 
 A set of this parameter is then given as a list or a linspace-like initializer function.
