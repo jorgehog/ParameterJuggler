@@ -117,6 +117,9 @@ class ParameterSet:
     def copy_config(self, controller, proc):
         config_out = self.get_config_name(proc)
 
+        if config_out in controller.copied_config_files:
+            return
+
         shutil.copy(self.config_filename, config_out)
 
         controller.register_config_file(config_out)
@@ -199,9 +202,7 @@ class ParameterSetController:
         skip = self.use_mpi
         if "ask" in kwargs:
 
-            if self.use_mpi and self.get_rank() == 0:
-                print "Time estimates is not available when using mpi"
-            else:
+            if not self.use_mpi:
                 if kwargs["ask"] is False:
                     skip = True
             kwargs.pop("ask")
@@ -210,10 +211,7 @@ class ParameterSetController:
 
         if "n_procs" in kwargs:
 
-            if self.use_mpi:
-                if self.get_rank() == 0:
-                    print "Number of processes is controller by mpirun and not n_procs kwarg when using mpi."
-            else:
+            if not self.use_mpi:
                 n_procs = kwargs["n_procs"]
 
                 if n_procs <= 1:
@@ -391,8 +389,7 @@ def testbed():
     set2.initialize_set([-2, -0.5, 1])
     set3.initialize_set_incr( 0, 100,  30, )
 
-
-    controller = ParameterSetController(use_mpi=False)
+    controller = ParameterSetController(use_mpi=len(sys.argv) != 1)
 
     controller.register_parameter_set(set1)
     controller.register_parameter_set(set2)
