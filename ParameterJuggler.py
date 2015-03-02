@@ -260,6 +260,10 @@ class ParameterSetController:
 
         n_per_proc = len(combinations)/n_procs
 
+        if self.get_rank() == 0:
+            print n_per_proc, "processes"
+
+
         remainder = len(combinations) - n_per_proc*n_procs
 
         self.all_threads = []
@@ -344,7 +348,7 @@ def quick_replace(cfg, name, value):
     with open(cfg, 'r') as f_read:
         cfg_str = f_read.read()
 
-    repl = sub("(%s\s*=\s*[\"\']?).*?([\"\']?;)" % name, "\g<1>%s\g<2>" % str(value), cfg_str)
+    repl = sub(r"(%s\s*=\s*[\"\']?).*?([\"\']?;)" % name, "\g<1>%s\g<2>" % str(value), cfg_str)
 
     with open(cfg, 'w') as f_write:
         f_write.write(repl)
