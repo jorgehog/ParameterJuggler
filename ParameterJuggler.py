@@ -42,6 +42,13 @@ class ParameterSet:
                  variable_pattern_in_config,
                  regex_flags=[]):
 
+        with open(config_filename, "r") as f:
+
+            match = findall(variable_pattern_in_config, f.read(), *regex_flags)
+
+        if not match:
+            raise RuntimeError("Pattern '%s' does not match anything in config file '%s'" % (variable_pattern_in_config, config_filename))
+
         self.config_filename = config_filename
         self.variable_pattern_in_config = variable_pattern_in_config
 
