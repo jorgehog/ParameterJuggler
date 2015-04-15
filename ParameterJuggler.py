@@ -355,17 +355,24 @@ class ParameterSetController:
             for thread in self.all_threads:
                 thread.stop()
 
-def quick_replace(cfg, name, value):
+def quick_replace(cfg, name, value, all_ranks=False):
 
-    cfg_str = ""
-    with open(cfg, 'r') as f_read:
-        cfg_str = f_read.read()
+    skip = False
+    if not all_ranks and mpi_success:
+        if MPI.COMM_WORLD.rank() != 0:
+            skip = True
 
-    repl = sub(r"(%s\s*=\s*[\"\']?).*?([\"\']?;)" % name, "\g<1>%s\g<2>" % str(value), cfg_str)
+    if not skip:
+        cfg_str = ""
+        with open(cfg, 'r') as f_read:
+            cfg_str = f_read.read()
 
-    with open(cfg, 'w') as f_write:
-        f_write.write(repl)
+        repl = sub(r"(%s\s*=\s*[\"\']?).*?([\"\']?;)" % name, "\g<1>%s\g<2>" % str(value), cfg_str)
 
+        with open(cfg, 'w') as f_write:
+            f_write.write(repl)
+
+    MPI.COMM_WORLD.Barrier()
 
 
 def exec_test_function(proc, combination):
