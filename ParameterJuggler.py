@@ -187,6 +187,7 @@ class ParameterSetController:
     def clean(self):
         for config_name in self.copied_config_files:
             os.remove(config_name)
+        self.copied_config_files = []
 
     def get_rank(self):
         if self.use_mpi:
@@ -230,7 +231,7 @@ class ParameterSetController:
             if self.get_rank() == 0:
                 raise ValueError("Number of processes %d is too high for %d processes." % (n_procs, n))
             else:
-                return
+                return 1
 
         if skip:
             ans = ""
@@ -261,7 +262,7 @@ class ParameterSetController:
 
         elif ans == "q":
             print "exiting.."
-            return
+            return 1
 
         combinations = list(product(*[pset.set for pset in self.parameter_sets]))
 
@@ -293,6 +294,11 @@ class ParameterSetController:
         self.start_runs(execute_program_rule, chunks, *args, **kwargs)
 
         self.clean()
+
+        return 0
+
+    def clear(self):
+        self.parameter_sets = []
 
     def dump_config_files(self, proc):
         for parameter_set in self.parameter_sets:
