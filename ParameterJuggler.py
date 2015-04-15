@@ -359,7 +359,7 @@ def quick_replace(cfg, name, value, all_ranks=False):
 
     skip = False
     if not all_ranks and mpi_success:
-        if MPI.COMM_WORLD.rank() != 0:
+        if MPI.COMM_WORLD.rank != 0:
             skip = True
 
     if not skip:
