@@ -372,7 +372,8 @@ def quick_replace(cfg, name, value, all_ranks=False):
         with open(cfg, 'w') as f_write:
             f_write.write(repl)
 
-    MPI.COMM_WORLD.Barrier()
+    if mpi_success:
+        MPI.COMM_WORLD.Barrier()
 
 
 def exec_test_function(proc, combination):
