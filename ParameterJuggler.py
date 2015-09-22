@@ -162,8 +162,13 @@ class ParameterSetController:
 
         self.use_mpi = use_mpi
 
+        self.repeats = 1
+
         if use_mpi and not mpi_success:
             raise ImportError("Missing dependecy for mpi: mpi4py")
+
+    def set_repeats(self, N):
+        self.repeats = N
 
     def register_parameter_set(self, parameter_set):
 
@@ -264,7 +269,9 @@ class ParameterSetController:
             print "exiting.."
             return 1
 
-        combinations = list(product(*[pset.set for pset in self.parameter_sets]))
+        combinations = list(product(*[pset.set for pset in self.parameter_sets]))*self.repeats
+
+        print combinations
 
         n_per_proc = len(combinations)/n_procs
 
@@ -299,6 +306,7 @@ class ParameterSetController:
 
     def clear(self):
         self.parameter_sets = []
+        self.repeats = 1
 
     def dump_config_files(self, proc):
         for parameter_set in self.parameter_sets:
@@ -419,6 +427,8 @@ def testbed():
     controller.register_parameter_set(set1)
     controller.register_parameter_set(set2)
     controller.register_parameter_set(set3)
+
+    controller.set_repeats(2)
 
     controller.run(exec_test_function, ask=False, n_procs=20)
 
