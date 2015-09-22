@@ -271,8 +271,6 @@ class ParameterSetController:
 
         combinations = list(product(*[pset.set for pset in self.parameter_sets]))*self.repeats
 
-        print combinations
-
         n_per_proc = len(combinations)/n_procs
 
         if self.get_rank() == 0:
