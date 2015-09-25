@@ -212,6 +212,8 @@ class ParameterSetController:
         for parameter_set in self.parameter_sets:
             n *= len(parameter_set.set)
 
+        n *= self.repeats
+
         skip = self.use_mpi
         if "ask" in kwargs:
 
