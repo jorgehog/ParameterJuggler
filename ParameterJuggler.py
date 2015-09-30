@@ -275,8 +275,9 @@ class ParameterSetController:
         combinations = list(product(*[pset.set for pset in self.parameter_sets]))*self.repeats
 
         if "shuffle" in kwargs:
-            if kwargs["shuffle"]:
-                combinations = random.shuffle(combinations)
+            if kwargs.pop("shuffle") is True:
+                random.shuffle(combinations)
+
 
         n_per_proc = len(combinations)/n_procs
 
@@ -435,7 +436,7 @@ def testbed():
 
     controller.set_repeats(2)
 
-    controller.run(exec_test_function, ask=False, n_procs=20)
+    controller.run(exec_test_function, ask=False, n_procs=20, shuffle=True)
 
 if __name__ == "__main__":
     testbed()
