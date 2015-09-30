@@ -5,6 +5,7 @@ import time
 import shutil
 import os
 import sys
+import random
 
 try:
     from mpi4py import MPI
@@ -265,6 +266,10 @@ class ParameterSetController:
             return 1
 
         combinations = list(product(*[pset.set for pset in self.parameter_sets]))
+
+        if "shuffle" in kwargs:
+            if kwargs["shuffle"]:
+                combinations = random.shuffle(combinations)
 
         n_per_proc = len(combinations)/n_procs
 
