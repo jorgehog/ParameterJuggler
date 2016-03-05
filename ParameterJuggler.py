@@ -308,7 +308,10 @@ class ParameterSetController:
 
         self.clean()
 
-        return 0
+        if self.stopped:
+            return 1
+        else:
+            return 0
 
     def clear(self):
         self.parameter_sets = []
