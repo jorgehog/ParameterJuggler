@@ -276,14 +276,16 @@ class ParameterSetController:
 
         if "shuffle" in kwargs:
             if kwargs.pop("shuffle") is True:
-                random.shuffle(combinations)
 
+                if self.use_mpi:
+                    random.seed(123456789)
+
+                random.shuffle(combinations)
 
         n_per_proc = len(combinations)/n_procs
 
         if self.get_rank() == 0:
             print n_per_proc, "processes"
-
 
         remainder = len(combinations) - n_per_proc*n_procs
 
