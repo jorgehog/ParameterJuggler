@@ -44,6 +44,35 @@ class Worker(threading.Thread):
                 self.controller.stop(self.proc, success)
 
 
+class MasterSlaveThread(threading.Thread):
+
+    def __init__(self, controller, exec_program_rule, initial_parameters, *args, **kwargs):
+        self.controller = controller
+        self.exec_program_rule = exec_program_rule
+        self.args = args
+        self.kwargs = kwargs
+        self.parameters = initial_parameters
+
+        super(MasterSlaveThread, self).__init__()
+
+    def run(self):
+
+        self.controller.dump_config_files(0)
+
+        while self.parameters is not None:
+            success = self.controller.run_parameters(self.exec_program_rule,
+                                                     self.parameters,
+                                                     0,
+                                                     *self.args, **self.kwargs)
+
+            if success != 0:
+                self.controller.stop(0, success)
+
+            self.controller.n += 1
+
+            self.parameters = self.controller.get_parameters_thread()
+
+
 class ParameterSet:
 
     def __init__(self,
@@ -213,7 +242,7 @@ class ParameterSetController:
 
     def n_nodes(self):
         if self.use_mpi:
-            return comm.size-1
+            return comm.size
         else:
             return 1
 
@@ -296,27 +325,36 @@ class ParameterSetController:
 
             #master
             if self.get_rank(self.use_mpi) == 0:
+
                 n_jobs = len(self.combinations)
+
+                master_thread = MasterSlaveThread(self,
+                                                  execute_program_rule,
+                                                  self.get_parameters(),
+                                                  *args, **kwargs)
+
+                master_thread.start()
 
                 #seed slaves
                 for proc in range(1, comm.size):
+                    self.dump_config_files(proc)
                     comm.send(self.get_parameters(), dest=proc, tag=proc)
 
                 status = MPI.Status()
-                n = 0
-                while n != n_jobs:
+                self.n = 0
+                while self.n != n_jobs:
                     success = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-                    n+=1
+                    self.n += 1
 
                     if success != 0:
                         self.stop(status.Get_source(), success)
 
-                    comm.send(self.get_parameters(), dest=status.Get_source(), tag=status.Get_tag())
+                    comm.send(self.get_parameters_thread(), dest=status.Get_source(), tag=status.Get_tag())
+
+                master_thread.join()
 
             #slave
             else:
-                self.dump_config_files(comm.rank)
-
                 parameters = comm.recv(source=0, tag=comm.rank)
 
                 while parameters is not None:
@@ -324,6 +362,8 @@ class ParameterSetController:
 
                     comm.send(success, dest=0, tag=comm.rank)
                     parameters = comm.recv(source=0, tag=comm.rank)
+
+            comm.Barrier()
 
         else:
 
@@ -427,7 +467,7 @@ n_per_proc = []
 
 def exec_test_function2(proc, combination):
 
-    time.sleep(proc/5.*random.random())
+    time.sleep((proc+1)/5.*random.random())
 
     testfile_name = "/tmp/test_paramloop_%d.cfg" % proc
     testfile2_name = "/tmp/test_paramloop2_%d.cfg" % proc
