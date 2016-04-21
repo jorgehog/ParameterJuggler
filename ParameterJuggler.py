@@ -34,6 +34,10 @@ class Worker(threading.Thread):
     def run(self):
         while not len(self.controller.combinations) == 0:
             parameters = self.controller.get_parameters_thread()
+
+            if parameters is None:
+                break
+
             success = self.controller.run_parameters(self.exec_program_rule,
                                                      parameters,
                                                      self.proc,
@@ -56,7 +60,6 @@ class MasterSlaveThread(threading.Thread):
         super(MasterSlaveThread, self).__init__()
 
     def run(self):
-
         self.controller.dump_config_files(0)
 
         while self.parameters is not None:
@@ -67,9 +70,6 @@ class MasterSlaveThread(threading.Thread):
 
             if success != 0:
                 self.controller.stop(0, success)
-
-            self.controller.n += 1
-
             self.parameters = self.controller.get_parameters_thread()
 
 
@@ -187,6 +187,9 @@ class ParameterSet:
 
 
 class ParameterSetController:
+
+    node_finished = -1
+    job_success = 0
 
     def __init__(self, use_mpi=False):
         self.parameter_sets = []
@@ -326,27 +329,28 @@ class ParameterSetController:
             #master
             if self.get_rank(self.use_mpi) == 0:
 
-                n_jobs = len(self.combinations)
-
                 master_thread = MasterSlaveThread(self,
                                                   execute_program_rule,
                                                   self.get_parameters(),
                                                   *args, **kwargs)
-
-                master_thread.start()
 
                 #seed slaves
                 for proc in range(1, comm.size):
                     self.dump_config_files(proc)
                     comm.send(self.get_parameters(), dest=proc, tag=proc)
 
-                status = MPI.Status()
-                self.n = 0
-                while self.n != n_jobs:
-                    success = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-                    self.n += 1
+                master_thread.start()
 
-                    if success != 0:
+                nodes_done = 0
+
+                status = MPI.Status()
+                while nodes_done != comm.size - 1:
+                    success = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+
+                    if success == self.node_finished:
+                        nodes_done += 1
+                        continue
+                    elif success != self.job_success:
                         self.stop(status.Get_source(), success)
 
                     comm.send(self.get_parameters_thread(), dest=status.Get_source(), tag=status.Get_tag())
@@ -361,7 +365,10 @@ class ParameterSetController:
                     success = self.run_parameters(execute_program_rule, parameters, comm.rank, *args, **kwargs)
 
                     comm.send(success, dest=0, tag=comm.rank)
+
                     parameters = comm.recv(source=0, tag=comm.rank)
+
+                comm.send(self.node_finished, dest=0, tag=comm.rank)
 
             comm.Barrier()
 
@@ -378,6 +385,7 @@ class ParameterSetController:
 
                 self.all_threads.append(thread)
 
+            for thread in self.all_threads:
                 thread.start()
 
             for thread in self.all_threads:
@@ -406,12 +414,18 @@ class ParameterSetController:
 
     def run_parameters(self, execute_program_rule, parameters, proc, *args, **kwargs):
             self.write_combination(proc, parameters)
-            return execute_program_rule(proc, parameters, *args, **kwargs)
+            success = execute_program_rule(proc, parameters, *args, **kwargs)
+
+            if success == self.node_finished:
+                raise RuntimeError("Success -1 is reverved for mpi node finishing message.")
+
+            return success
 
     def write_combination(self, proc, combination):
-
         for parameter_set, value in zip(self.parameter_sets, combination):
             parameter_set.write_value(value, proc)
+
+
 
     def stop(self, which, status):
         print "Process %d ended with exit status %d: Stopping..." % (which, status)
@@ -453,7 +467,6 @@ def exec_test_function(proc, combination):
         testfile_raw_text = testfile.read()
 
     results = findall(r"a\s*\=\s*\[\s*(\d+)\s*\,\s*(.*)\s*\,\s*(\d+)\s*\]", testfile_raw_text)[0]
-
 
     for i, result in enumerate(results):
         if float(result) == combination[i]:
