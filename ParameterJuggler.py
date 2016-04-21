@@ -35,7 +35,7 @@ class Worker(threading.Thread):
         while not len(self.controller.combinations) == 0:
             parameters = self.controller.get_parameters_thread()
 
-            if parameters is None:
+            if parameters is None or self.controller.stopped:
                 break
 
             success = self.controller.run_parameters(self.exec_program_rule,
@@ -44,8 +44,9 @@ class Worker(threading.Thread):
                                                      *self.args,
                                                      **self.kwargs)
 
-            if success != 0 and not self.stopped:
+            if success != 0 and not self.controller.stopped:
                 self.controller.stop(self.proc, success)
+                break
 
 
 class MasterSlaveThread(threading.Thread):
