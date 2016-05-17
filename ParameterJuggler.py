@@ -79,20 +79,22 @@ class ParameterSet:
     def __init__(self,
                  config_filename,
                  variable_pattern_in_config,
-                 regex_flags=[]):
+                 regex_flags=[],
+                 check=True):
 
         if type(variable_pattern_in_config) is not list:
             variable_pattern_in_config = [variable_pattern_in_config]
 
-        with open(config_filename, "r") as f:
+        if check:
+            with open(config_filename, "r") as f:
 
-            txt = f.read()
-            for pattern in variable_pattern_in_config:
-                match = findall(pattern, txt, *regex_flags)
+                txt = f.read()
+                for pattern in variable_pattern_in_config:
+                    match = findall(pattern, txt, *regex_flags)
 
-            if not match:
-                raise RuntimeError("Pattern '%s' does not match anything in config file '%s'" % (pattern,
-                                                                                                 config_filename))
+                if not match:
+                    raise RuntimeError("Pattern '%s' does not match anything in config file '%s'" % (pattern,
+                                                                                                     config_filename))
 
         self.config_filename = config_filename
         self.variable_pattern_in_config = variable_pattern_in_config
