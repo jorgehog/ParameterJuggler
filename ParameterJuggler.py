@@ -92,8 +92,8 @@ class ParameterSet:
                 for pattern in variable_pattern_in_config:
                     match = findall(pattern, txt, *regex_flags)
 
-                if not match:
-                    raise RuntimeError("Pattern '%s' does not match anything in config file '%s'" % (pattern,
+                    if not match:
+                        raise RuntimeError("Pattern '%s' does not match anything in config file '%s'" % (pattern,
                                                                                                      config_filename))
 
         self.config_filename = config_filename
